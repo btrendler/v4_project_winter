@@ -2,6 +2,12 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.linalg import solve_discrete_are
 
+"""
+Written by EJ Mercer in collaboration with Nathan Schill, Dallin Seyfried, and Brigg Trendler
+
+MIT License. I would love to hear about anything you use this class for.
+"""
+
 
 class ComplexRoad:
     u"""
