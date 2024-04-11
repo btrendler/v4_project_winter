@@ -230,7 +230,7 @@ class ComplexRoad:
         :return: Two functions accepting time, the first returns the states, the second returns the control
         """
         # Compute each of the kappas
-        ds = self.gammas[self.structure == "m"]
+        ds = self.gammas[self.structure[1:] == "m"]  # TODO: confirm this with someone
         m0 = init_roads[self.structure == "m"]
         kappas = (ds * m0) + (ds * m0 * m0 / self.cs) - ((ds + 2 * ds * m0 / self.cs) * m0)
 
@@ -263,7 +263,7 @@ class ComplexRoad:
             return res[self._i_segments], res[self._i_queues]
 
         # Return the found solution
-        return _get_sol, lambda t: (-r_inv @ B.T @ P @ sol.sol(t).reshape(-1, 1))
+        return _get_sol, lambda t: (-r_inv @ B.T @ P @ sol.sol(t))
 
     def multi_step(self, init_roads: np.ndarray, init_queues: np.ndarray,
                    time_span: tuple[float, float] | tuple[int, int], update_func: Callable = None,
@@ -304,7 +304,7 @@ class ComplexRoad:
         # Loop through each interval and find the values
         for i in range(len(time_intervals) - 1):
             # Get the interval parameters
-            interval = time_intervals[i, i + 1]
+            interval = tuple(time_intervals[i:i + 2])
             t_space = np.linspace(*interval, n_count)
             i1 = n_count + (i0 := i * n_count)
 
@@ -314,7 +314,7 @@ class ComplexRoad:
             control[:, i0:i1] = ctrl_poly(t_space)
 
             # Update the initial conditions for the next interval
-            init_roads, init_queues = roads[:, i1], queues[:, i1]
+            init_roads, init_queues = roads[:, i1 - 1], queues[:, i1 - 1]
 
             # Call the update function
             if update_func:
