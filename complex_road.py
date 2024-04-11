@@ -298,7 +298,8 @@ class ComplexRoad:
         control = np.zeros((self._n_queues, total_entries))
 
         # Call the update function
-        update_func(self, time_intervals[0], init_roads, init_queues)
+        if update_func:
+            update_func(self, time_intervals[0], init_roads, init_queues)
 
         # Loop through each interval and find the values
         for i in range(len(time_intervals) - 1):
@@ -316,7 +317,8 @@ class ComplexRoad:
             init_roads, init_queues = roads[:, i1], queues[:, i1]
 
             # Call the update function
-            update_func(self, t_space[-1], init_roads, init_queues)
+            if update_func:
+                update_func(self, t_space[-1], init_roads, init_queues)
 
         # Return the computed solutions
         return roads, queues, control
