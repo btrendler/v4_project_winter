@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.linalg import solve_discrete_are
+from typing import Callable
 
 """
 Written by EJ Mercer in collaboration with Nathan Schill, Dallin Seyfried, and Brigg Trendler
@@ -173,8 +174,9 @@ class ComplexRoad:
         """Return the Q and R matrices of the LQR problem using the currently-defined costs"""
         return np.diag(self.state_costs), np.diag(self.control_costs)
 
-    def reconstruct_costs(self, q_penalty=4., n_penalty=3., m_penalty=4., r_penalty=2., l_penalty=0., seg_penalty=None,
-                          u_penalty=1.):
+    def reconstruct_costs(self, q_penalty: int | float | np.ndarray = 4., n_penalty: float = 3., m_penalty: float = 4.,
+                          r_penalty: float = 2., l_penalty: float = 0., seg_penalty: np.ndarray = None,
+                          u_penalty: float | np.ndarray = 1.):
         """
         Reconfigure the cost matrices for this optimization problem
 
@@ -216,7 +218,8 @@ class ComplexRoad:
         self.control_costs = u_penalty if not isinstance(u_penalty, (int, float)) else np.ones(
             self._m_count) * u_penalty
 
-    def single_step(self, init_roads, init_queues, time_span, r_inv=None):
+    def single_step(self, init_roads: np.ndarray, init_queues: np.ndarray, time_span: np.ndarray,
+                    r_inv: np.ndarray = None):
         """
         Perform a one-time evaluation of the infinite-horizon LQR problem defined by this system
 
@@ -262,7 +265,9 @@ class ComplexRoad:
         # Return the found solution
         return _get_sol, lambda t: (-r_inv @ B.T @ P @ sol.sol(t).reshape(-1, 1))
 
-    def multi_step(self, init_roads, init_queues, time_span, update_func=None, num_intervals=10):
+    def multi_step(self, init_roads: np.ndarray, init_queues: np.ndarray,
+                   time_span: tuple[float, float] | tuple[int, int], update_func: Callable = None,
+                   num_intervals: int = 10):
         """
         Perform a repeating evaluation of the infinite-horizon LQR problem defined by this system
 
@@ -286,6 +291,9 @@ class ComplexRoad:
         queues = np.zeros((self._n_queues, total_entries))
         control = np.zeros((self._n_queues, total_entries))
 
+        # Call the update function
+        update_func(self, time_intervals[0], init_roads, init_queues)
+
         # Loop through each interval and find the values
         for i in range(len(time_intervals) - 1):
             # Get the interval parameters
@@ -300,6 +308,9 @@ class ComplexRoad:
 
             # Update the initial conditions for the next interval
             init_roads, init_queues = roads[:, i1], queues[:, i1]
+
+            # Call the update function
+            update_func(self, t_space[-1], init_roads, init_queues)
 
         # Return the computed solutions
         return roads, queues, control
