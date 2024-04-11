@@ -271,6 +271,12 @@ class ComplexRoad:
         """
         Perform a repeating evaluation of the infinite-horizon LQR problem defined by this system
 
+        The update function should accept 4 parameters:
+        - This ComplexRoad
+        - The time its being called at
+        - The road state
+        - The queue state
+
         :param init_roads: The initial values for each road segment
         :param init_queues: The initial values for each queue
         :param time_span: The time interval on which to evaluate, of the form (t0, tf)
