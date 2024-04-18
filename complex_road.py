@@ -53,7 +53,7 @@ class ComplexRoad:
     """
 
     def __init__(self, structure: str, gammas: np.ndarray, cs: np.array, betas: np.ndarray, alpha: float):
-        u"""
+        """
         Initialize a complex road comprised of several segments, including multiple entrance ramps and
         road segments.
 
