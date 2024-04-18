@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.linalg import solve_discrete_are
+from scipy.linalg import solve_continuous_are
 from typing import Callable
 
 
@@ -89,11 +89,11 @@ class _AbstractSegment:
             raise ValueError(f"Must have at least {self.n_control} control indices assigned to this node.")
         self.control_indices = control_indices
 
-    def _apply_state(self, A, states, n_state):
+    def _apply_state(self, A, states, n_state, ctrl=True):
         if self.state_indices is None:
             raise ValueError("Must attach to a road network.")
 
-    def _apply_control(self, B):
+    def _apply_control(self, B, unctrl=False):
         if self.state_indices is None:
             raise ValueError("Must attach to a road network.")
 
@@ -112,10 +112,11 @@ class EndSegment(_AbstractSegment):
         # Call superclass
         _AbstractSegment.__init__(self, np.array([state_reward]), np.array([]))
 
-    def _apply_state(self, A, states, n0):
-        super()._apply_state(A, states, n0)
+    def _apply_state(self, A, states, n_state, ctrl=True):
+        super()._apply_state(A, states, n_state, ctrl)
         # Invert this row of the state matrix, so the cost is a reward
-        A[self.state_indices, :] *= -1
+        if ctrl:
+            A[self.state_indices, :] *= -1
 
     def get_seg_reward(self):
         """
@@ -166,8 +167,8 @@ class RoadSegment(_AbstractSegment):
         """
         self.state_costs[0] = value
 
-    def _apply_state(self, A, states, n0):
-        super()._apply_state(A, states, n0)
+    def _apply_state(self, A, states, n0, ctrl=True):
+        super()._apply_state(A, states, n0, ctrl)
         # Extract linearization values
         c0, = states
 
@@ -223,8 +224,8 @@ class BeginSegment(_AbstractSegment):
         """
         self.state_costs[0] = value
 
-    def _apply_state(self, A, states, n0):
-        super()._apply_state(A, states, n0)
+    def _apply_state(self, A, states, n0, ctrl=True):
+        super()._apply_state(A, states, n0, ctrl)
         # Extract linearization values
         c0, = states
 
@@ -264,7 +265,8 @@ class MergeSegment(_AbstractSegment):
         :param control_cost: The cost associated with the control value
         :param leave_func: The function representing how quickly cars leave the merge segment to the next segment
         :param add_func: The function representing how quickly cars enter the queue
-        :param queue_func: The function representing the speed at which cars enter the merge segment from the queue
+        :param queue_func: The function representing the speed at which cars enter the merge segment from the queue,
+                when uncontrolled
         :param kappa: The factor on the control value (typically 1 or 0)
         """
         # Call superclass
@@ -303,8 +305,8 @@ class MergeSegment(_AbstractSegment):
         """
         self.state_costs[1] = value
 
-    def _apply_state(self, A, states, n0):
-        super()._apply_state(A, states, n0)
+    def _apply_state(self, A, states, n_state, ctrl=True):
+        super()._apply_state(A, states, n_state, ctrl)
         # Extract linearization values
         c0, q0, = states
 
@@ -313,10 +315,10 @@ class MergeSegment(_AbstractSegment):
         n = self.next
 
         # Evaluate linearized functions
-        f_const, f_c_term, f_n_term = self._f(c0, n0)
+        f_const, f_c_term, f_n_term = self._f(c0, n_state)
         b_const, b_c_term, b_q_term = self._beta(c0, q0)
         g_const, g_c_term, g_q_term = 0., 0., 0.
-        if self._g is not None:
+        if self._g is not None and not ctrl:
             g_const, g_c_term, g_q_term = self._g(c0, q0)
 
         # Apply to the state accordingly
@@ -334,7 +336,7 @@ class MergeSegment(_AbstractSegment):
         A[q, q] = b_q_term - g_q_term
         A[q, c] = b_c_term - g_c_term
 
-    def _apply_control(self, B):
+    def _apply_control(self, B, unctrl=False):
         c, q, = self.state_indices
         u, = self.control_indices
         B[c, u] = self._kappa
@@ -431,6 +433,38 @@ class ExtComplRoad:
             self._i_roads = self._i_roads.astype(int)
             self._i_queues = self._i_queues.astype(int)
 
+    def uncontrolled_result(self, init_roads: np.ndarray, init_queues: np.ndarray, time_span: tuple):
+        """
+        Perform a simulation of what would happen on this road network with the given state with zero control
+
+        :param init_roads: The initial values for each road segment
+        :param init_queues: The initial values for each queue
+        :param time_span: The time to evaluate over
+        :return: A function accepting time, returning the road & queue states
+        """
+        # Construct the state vector
+        init_state = np.ones(self.n_entries)
+        init_state[self._i_roads] = init_roads
+        init_state[self._i_queues] = init_queues
+
+        # Get A, B, Q, and R
+        A = self._get_evolution(init_state, ctrl=False)
+
+        # Set up the evolution equation
+        def _system(_, y):
+            return A @ y
+
+        # Solve the state evolution using DOP853
+        sol = solve_ivp(_system, time_span, init_state, dense_output=True, method="DOP853")
+
+        # Construct return function
+        def _get_sol(t):
+            res = sol.sol(t)
+            return res[self._i_roads], res[self._i_queues]
+
+        # Return the found solution
+        return _get_sol
+
     def single_step(self, init_roads: np.ndarray, init_queues: np.ndarray, time_span: tuple,
                     r_inv: np.ndarray = None) -> tuple[Callable, Callable]:
         """
@@ -453,7 +487,7 @@ class ExtComplRoad:
         r_inv = np.linalg.inv(R) if r_inv is None else r_inv
 
         # Use the algebraic Ricatti equation to find P
-        P = solve_discrete_are(A, B, Q, R)
+        P = solve_continuous_are(A, B, Q, R)
 
         # Set up the evolution equation with the optimal control
         def _system(t, y):
@@ -527,7 +561,7 @@ class ExtComplRoad:
         # Return the computed solutions
         return roads, queues, control
 
-    def _get_evolution(self, current_state: np.ndarray):
+    def _get_evolution(self, current_state: np.ndarray, ctrl: bool = True):
         # Create a matrix of zeros so everything is constant by default
         A = np.zeros((self.n_entries, self.n_entries))
         B = np.zeros((self.n_entries, self.n_control))
@@ -535,8 +569,9 @@ class ExtComplRoad:
         # Loop through each segment and apply it to both matrices
         for seg in self.segments:
             seg._apply_state(A, current_state[seg.state_indices],
-                             current_state[seg.next] if seg.next is not None else None)
-            seg._apply_control(B)
+                             current_state[seg.next] if seg.next is not None else None, ctrl)
+            if ctrl:
+                seg._apply_control(B)
 
         # Return the computed matrices
         return A, B
