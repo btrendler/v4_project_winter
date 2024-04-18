@@ -40,7 +40,7 @@ class _AbstractSegment:
         self.state_indices = state_indices
 
     def _set_control(self, control_indices: np.ndarray):
-        if len(control_indices) != self.n_indices:
+        if len(control_indices) != self.n_control:
             raise ValueError(f"Must have at least {self.n_control} control indices assigned to this node.")
         self.control_indices = control_indices
 
@@ -379,16 +379,19 @@ class ExtComplRoad:
         self.segments.append(seg)
 
         # Handle ending segment
-        if seg is EndSegment:
+        if isinstance(seg, EndSegment):
+            seg.next = None
             self.n_entries = self.c_state_idx
-            self.n_control = self.n_control
+            self.n_control = self.c_ctrl_idx
             self.c_state_idx = None
             self.c_ctrl_idx = None
             self.n_roads = len(self._i_roads)
             self.n_queues = len(self._i_queues)
+            self._i_roads = self._i_roads.astype(int)
+            self._i_queues = self._i_queues.astype(int)
 
     def single_step(self, init_roads: np.ndarray, init_queues: np.ndarray, time_span: tuple,
-                    r_inv: np.ndarray = None) -> None:
+                    r_inv: np.ndarray = None) -> tuple[Callable, Callable]:
         """
         Perform a one-time evaluation of the infinite-horizon LQR problem defined by this system
 
@@ -428,7 +431,7 @@ class ExtComplRoad:
 
     def multi_step(self, init_roads: np.ndarray, init_queues: np.ndarray,
                    time_span: tuple[float, float] | tuple[int, int], update_func: Callable = None,
-                   num_intervals: int = 10) -> None:
+                   num_intervals: int = 10) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Perform a repeating evaluation of the infinite-horizon LQR problem defined by this system
 
@@ -490,7 +493,7 @@ class ExtComplRoad:
 
         # Loop through each segment and apply it to both matrices
         for seg in self.segments:
-            seg._apply_state(A, current_state[seg.state_indices], current_state[seg.next])
+            seg._apply_state(A, current_state[seg.state_indices], current_state[seg.next] if seg.next is not None else None)
             seg._apply_control(B)
 
         # Return the computed matrices
@@ -499,6 +502,6 @@ class ExtComplRoad:
     def _get_costs(self):
         # Create the state cost & control costs using the definitions in the segments
         return (
-            np.diag(np.concatenate([seg.state_cost for seg in self.segments])),
-            np.diag(np.concatenate([seg.control_cost for seg in self.segments]))
+            np.diag(np.concatenate([np.zeros(1), *(seg.state_costs for seg in self.segments)])),
+            np.diag(np.concatenate([seg.control_costs for seg in self.segments]))
         )
