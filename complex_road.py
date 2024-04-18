@@ -6,7 +6,7 @@ from typing import Callable
 """
 Written by EJ Mercer in collaboration with Nathan Schill, Dallin Seyfried, and Brigg Trendler
 
-MIT License. I would love to hear about anything you use this class for.
+This file is under the MIT License. I would love to hear about anything you use this class for.
 """
 
 
@@ -53,7 +53,7 @@ class ComplexRoad:
     """
 
     def __init__(self, structure: str, gammas: np.ndarray, cs: np.array, betas: np.ndarray, alpha: float):
-        u"""
+        """
         Initialize a complex road comprised of several segments, including multiple entrance ramps and
         road segments.
 
