@@ -6,7 +6,7 @@ from typing import Callable
 """
 Written by EJ Mercer in collaboration with Nathan Schill, Dallin Seyfried, and Brigg Trendler
 
-MIT License. I would love to hear about anything you use this class for.
+This file is under the MIT License. I would love to hear about anything you use this class for.
 """
 
 
