@@ -4,22 +4,53 @@ from scipy.linalg import solve_discrete_are
 from typing import Callable
 
 
-# Utility function to compute the first-order Taylor series of a function of one variable at a given point
-def _taylor_exp_1d(func: Callable[[float], tuple[float, float]]):
-    def _ret(point: float):
-        # Compute the constant and first-order terms and return them
-        f, fp1 = func(point)
-        return (f - point * fp1), fp1
+def ts(func: Callable[[float], tuple[float, float]] | Callable[[float, float], tuple[float, float, float]]):
+    """
+    Computes the taylor series of a function & its derivatives
+
+    The function must return first its value, then the derivative w.r.t. the first parameter, then the derivative
+    w.r.t. the second parameter, if applicable.
+
+    :param func: The function of one or two variables of which to compute the taylor series
+    :return: A function which returns the constant portion, the first parameter term, and the second parameter term,
+            if applicable
+    """
+
+    try:
+        func(0.)
+
+        def _ret(point: float):
+            # Compute the constant and first-order terms and return them
+            f, fp1 = func(point)
+            return (f - point * fp1), fp1
+
+        return _ret
+    except TypeError:
+        def _ret(p1: float, p2: float):
+            # Compute the constant and first-order terms and return them
+            f, fp1, fp2 = func(p1, p2)
+            return (f - (p1 * fp1) - (p2 * fp2)), fp1, fp2
+
+        return _ret
+
+
+def const(val: float):
+    def _ret(p1, p2=0):
+        return val, 0, 0
 
     return _ret
 
 
-# Utility function to compute the first-order Taylor series of a function of two variables at a given point
-def _taylor_exp_2d(func: Callable[[float, float], tuple[float, float, float]]):
-    def _ret(p1: float, p2: float):
-        # Compute the constant and first-order terms and return them
-        f, fp1, fp2 = func(p1, p2)
-        return (f - (p1 * fp1) - (p2 * fp2)), fp1, fp2
+def p1_const(val: float):
+    def _ret(p1, p2=0):
+        return 0, val, 0
+
+    return _ret
+
+
+def p2_const(val: float):
+    def _ret(p1, p2=0):
+        return 0, 0, val
 
     return _ret
 
@@ -105,7 +136,7 @@ class RoadSegment(_AbstractSegment):
         # Call superclass
         _AbstractSegment.__init__(self, np.array([seg_cost]), np.array([]))
         # Store passed-in parameters
-        self._f = _taylor_exp_2d(leave_func)
+        self._f = leave_func
 
     def get_seg_cost(self):
         """
@@ -161,8 +192,8 @@ class BeginSegment(_AbstractSegment):
         # Call superclass
         _AbstractSegment.__init__(self, np.array([seg_cost]), np.array([]))
         # Store passed-in parameters
-        self._alpha = _taylor_exp_1d(enter_func)
-        self._f = _taylor_exp_2d(leave_func)
+        self._alpha = enter_func
+        self._f = leave_func
 
     def get_seg_cost(self):
         """
@@ -225,9 +256,9 @@ class MergeSegment(_AbstractSegment):
         # Call superclass
         _AbstractSegment.__init__(self, np.array([seg_cost, ramp_cost]), np.array([control_cost]))
         # Store passed-in parameters
-        self._f = _taylor_exp_2d(leave_func)
-        self._beta = _taylor_exp_2d(add_func)
-        self._g = _taylor_exp_2d(queue_func) if queue_func is not None else None
+        self._f = leave_func
+        self._beta = add_func
+        self._g = queue_func
         self._kappa = kappa
 
     def get_seg_cost(self):
@@ -317,13 +348,9 @@ class ExtComplRoad:
 
     Future versions may add support for exit ramps, loops, and multiple inputs.
 
-    Functions must be specified such that they return not only their value, but also their derivatives. For example,
-    a function from 1 variable to the real numbers must return two values - first, the value of the function, and then,
-    the value of the function's derivative, as a tuple.
-
-    For a function from 2 variables to the real numbers, it must return three values - first, the value of the function,
-    then the first derivative of the function with respect to the first parameter, then the first derivative of the
-    function with respect to the second parameter, again as a tuple.
+    Functions must be specified such that they return the transition rate as the coefficients & constants on the
+    equation ret1 + ret2 * p1 + ret3 * p2, where p1 and p2 are variables corresponding to the current state of the
+    parameter values. An easy way to do this is to use either ts() or const().
 
     """
 
@@ -493,7 +520,8 @@ class ExtComplRoad:
 
         # Loop through each segment and apply it to both matrices
         for seg in self.segments:
-            seg._apply_state(A, current_state[seg.state_indices], current_state[seg.next] if seg.next is not None else None)
+            seg._apply_state(A, current_state[seg.state_indices],
+                             current_state[seg.next] if seg.next is not None else None)
             seg._apply_control(B)
 
         # Return the computed matrices
