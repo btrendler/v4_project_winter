@@ -448,7 +448,7 @@ class ExtComplRoad:
         init_state[self._i_queues] = init_queues
 
         # Get A, B, Q, and R
-        A = self._get_evolution(init_state, ctrl=False)
+        A, _ = self._get_evolution(init_state, ctrl=False)
 
         # Set up the evolution equation
         def _system(_, y):
