@@ -1,0 +1,344 @@
+import numpy as np
+from scipy.integrate import solve_ivp
+from scipy.linalg import solve_discrete_are
+from typing import Callable
+
+
+# Utility function to compute the first-order Taylor series of a function of one variable at a given point
+def _taylor_exp_1d(func: Callable[[float], tuple[float, float]]):
+    def _ret(point: float):
+        # Compute the constant and first-order terms and return them
+        f, fp1 = func(point)
+        return (f - point * fp1), fp1
+
+    return _ret
+
+
+# Utility function to compute the first-order Taylor series of a function of two variables at a given point
+def _taylor_exp_2d(func: Callable[[float, float], tuple[float, float, float]]):
+    def _ret(p1: float, p2: float):
+        # Compute the constant and first-order terms and return them
+        f, fp1, fp2 = func(p1, p2)
+        return (f - (p1 * fp1) - (p2 * fp2)), fp1, fp2
+
+    return _ret
+
+
+class _AbstractSegment:
+    def __init__(self, state_costs: np.ndarray, control_costs: np.ndarray):
+        self.state_costs = state_costs
+        self.n_indices = len(state_costs)
+        self.control_costs = control_costs
+        self.n_control = len(control_costs)
+        self.state_indices = None
+        self.control_indices = None
+        self.next = None
+
+    def _set_indices(self, state_indices: np.ndarray):
+        if len(state_indices) != self.n_indices:
+            raise ValueError(f"Must have at least {self.n_indices} state indices assigned to this node.")
+        self.state_indices = state_indices
+
+    def _set_control(self, control_indices: np.ndarray):
+        if len(control_indices) != self.n_indices:
+            raise ValueError(f"Must have at least {self.n_control} control indices assigned to this node.")
+        self.control_indices = control_indices
+
+    def _apply_state(self, A, states, n_state):
+        if self.state_indices is None:
+            raise ValueError("Must attach to a road network.")
+
+    def _apply_control(self, B):
+        if self.state_indices is None:
+            raise ValueError("Must attach to a road network.")
+
+
+class EndSegment(_AbstractSegment):
+    def __init__(self, state_reward: float):
+        _AbstractSegment.__init__(self, np.array([state_reward]), np.array([]))
+
+    def _apply_state(self, A, states, n0):
+        super()._apply_state(A, states, n0)
+        # Invert this row of the state matrix, so the cost is a reward
+        A[self.state_indices, :] *= -1
+
+
+class RoadSegment(_AbstractSegment):
+    def __init__(self, state_cost: float,
+                 leave_func: Callable[[float, float], tuple[float, float, float]]):
+        # Call superclass
+        _AbstractSegment.__init__(self, np.array([state_cost]), np.array([]))
+        # Store passed-in parameters
+        self._f = _taylor_exp_2d(leave_func)
+
+    def _apply_state(self, A, states, n0):
+        super()._apply_state(A, states, n0)
+        # Extract linearization values
+        c0, = states
+
+        # Get indices
+        c, = self.state_indices
+        n = self.next
+
+        # Evaluate linearized functions
+        const, c_term, n_term = self._f(c0, n0)
+
+        # Subtract f from c's state, and add it to the next one
+        A[c, 0] = -const
+        A[c, c] = -c_term
+        A[c, n] = -n_term
+        A[n, 0] = const
+        A[n, c] = c_term
+        A[n, n] = n_term
+
+
+class BeginSegment(_AbstractSegment):
+    def __init__(self, state_cost: float,
+                 enter_func: Callable[[float], tuple[float, float]],
+                 leave_func: Callable[[float, float], tuple[float, float, float]]):
+        # Call superclass
+        _AbstractSegment.__init__(self, np.array([state_cost]), np.array([]))
+        # Store passed-in parameters
+        self._alpha = _taylor_exp_1d(enter_func)
+        self._f = _taylor_exp_2d(leave_func)
+
+    def _apply_state(self, A, states, n0):
+        super()._apply_state(A, states, n0)
+        # Extract linearization values
+        c0, = states
+
+        # Get indices
+        c, = self.state_indices
+        n = self.next
+
+        # Evaluate linearized functions
+        f_const, f_c_term, f_n_term = self._f(c0, n0)
+        a_const, a_c_term = self._alpha(c0)
+
+        # Subtract f from c's state, and add it to the next one, and add alpha to c's state
+        A[c, 0] = -f_const + a_const
+        A[c, c] = a_c_term - f_c_term
+        A[c, n] = -f_n_term
+        A[n, 0] = f_const
+        A[n, c] = f_c_term
+        A[n, n] = f_n_term
+
+
+class MergeSegment(_AbstractSegment):
+    def __init__(self, seg_cost: float, ramp_cost: float, control_cost: float,
+                 leave_func: Callable[[float, float], tuple[float, float, float]],
+                 add_func: Callable[[float, float], tuple[float, float, float]],
+                 queue_func: Callable[[float, float], tuple[float, float, float]] = None,
+                 kappa: float = 1):
+        # Call superclass
+        _AbstractSegment.__init__(self, np.array([seg_cost, ramp_cost]), np.array([control_cost]))
+        # Store passed-in parameters
+        self._f = _taylor_exp_2d(leave_func)
+        self._beta = _taylor_exp_2d(add_func)
+        self._g = _taylor_exp_2d(queue_func) if queue_func is not None else None
+        self._kappa = kappa
+
+    def _apply_state(self, A, states, n0):
+        super()._apply_state(A, states, n0)
+        # Extract linearization values
+        c0, q0, = states
+
+        # Get indices
+        c, q, = self.state_indices
+        n = self.next
+
+        # Evaluate linearized functions
+        f_const, f_c_term, f_n_term = self._f(c0, n0)
+        b_const, b_c_term, b_q_term = self._beta(c0, q0)
+        g_const, g_c_term, g_q_term = 0., 0., 0.
+        if self._g is not None:
+            g_const, g_c_term, g_q_term = self._g(c0, q0)
+
+        # Apply to the state accordingly
+        # First, c prime
+        A[c, 0] = -f_const + g_const
+        A[c, c] = g_c_term - f_c_term
+        A[c, n] = -f_n_term
+        A[c, q] = g_q_term
+        # Then, n prime
+        A[n, 0] = f_const
+        A[n, n] = f_n_term
+        A[n, c] = f_c_term
+        # Then q prime
+        A[q, 0] = b_const - g_const
+        A[q, q] = b_q_term - g_q_term
+        A[q, c] = b_c_term - g_c_term
+
+    def _apply_control(self, B):
+        c, q, = self.state_indices
+        u, = self.control_indices
+        B[c, u] = self._kappa
+        B[q, u] = -self._kappa
+
+
+class ExpComplRoad:
+    def __init__(self):
+        self.segments = []
+        self.c_state_idx = 1
+        self.c_ctrl_idx = 0
+        self.n_entries = None
+        self.n_control = None
+        self.n_roads = None
+        self.n_queues = None
+        self._i_roads = np.array([])
+        self._i_queues = np.array([])
+
+    def add(self, seg: _AbstractSegment):
+        # Validate inputs
+        if len(self.segments) == 0:
+            if seg is BeginSegment:
+                raise ValueError("Must start with a BeginSegment.")
+        if len(self.segments) != 0:
+            if seg is BeginSegment:
+                raise ValueError("Cannot have multiple BeginSegments.")
+        if self.c_state_idx is None:
+            raise ValueError("Cannot append after an EndSegment.")
+
+        # Assign state indexes
+        idx = self.c_state_idx
+        indices = np.array(range(idx, (idx := idx + seg.n_indices)))
+        seg._set_indices(indices)
+        self._i_roads = np.concatenate((self._i_roads, indices[:1]))
+        self._i_queues = np.concatenate((self._i_queues, indices[1:]))
+        self.c_state_idx = idx
+
+        # Assign control indexes
+        idx = self.c_ctrl_idx
+        seg._set_control(np.array(range(idx, (idx := idx + seg.n_control))))
+        self.c_ctrl_idx = idx
+
+        # Set the next element
+        seg.next = self.c_state_idx
+
+        # Add it to the list
+        self.segments.append(seg)
+
+        # Handle ending segment
+        if seg is EndSegment:
+            self.n_entries = self.c_state_idx
+            self.n_control = self.n_control
+            self.c_state_idx = None
+            self.c_ctrl_idx = None
+            self.n_roads = len(self._i_roads)
+            self.n_queues = len(self._i_queues)
+
+    def _get_evolution(self, current_state: np.ndarray):
+        # Create a matrix of zeros so everything is constant by default
+        A = np.zeros((self.n_entries, self.n_entries))
+        B = np.zeros((self.n_entries, self.n_control))
+
+        # Loop through each segment and apply it to both matrices
+        for seg in self.segments:
+            seg._apply_state(A, current_state[seg.state_indices], current_state[seg.next])
+            seg._apply_control(B)
+
+        # Return the computed matrices
+        return A, B
+
+    def _get_costs(self):
+        return (
+            np.diag(np.concatenate([seg.state_cost for seg in self.segments])),
+            np.diag(np.concatenate([seg.control_cost for seg in self.segments]))
+        )
+
+    def single_step(self, init_roads: np.ndarray, init_queues: np.ndarray, time_span: tuple,
+                    r_inv: np.ndarray = None):
+        """
+        Perform a one-time evaluation of the infinite-horizon LQR problem defined by this system
+
+        :param init_roads: The initial values for each road segment
+        :param init_queues: The initial values for each queue
+        :param time_span: The time to evaluate over
+        :param r_inv: The inverse of the R matrix from the costs, or None to compute automatically
+        :return: Two functions accepting time, the first returns the states, the second returns the control
+        """
+        # Construct the state vector
+        init_state = np.ones(self.n_entries)
+        init_state[self._i_roads] = init_roads
+        init_state[self._i_queues] = init_queues
+
+        # Get A, B, Q, and R
+        A, B = self._get_evolution(init_state)
+        Q, R = self._get_costs()
+        r_inv = np.linalg.inv(R) if r_inv is None else r_inv
+
+        # Use the algebraic Ricatti equation to find P
+        P = solve_discrete_are(A, B, Q, R)
+
+        # Set up the evolution equation with the optimal control
+        def _system(t, y):
+            return (A - B @ r_inv @ B.T @ P) @ y
+
+        # Solve the optimal state evolution using the DOP853 solver
+        sol = solve_ivp(_system, time_span, init_state, dense_output=True, method="DOP853")
+
+        # Construct return function
+        def _get_sol(t):
+            res = sol.sol(t)
+            return res[self._i_roads], res[self._i_queues]
+
+        # Return the found solution
+        return _get_sol, lambda t: (-r_inv @ B.T @ P @ sol.sol(t))
+
+    def multi_step(self, init_roads: np.ndarray, init_queues: np.ndarray,
+                   time_span: tuple[float, float] | tuple[int, int], update_func: Callable = None,
+                   num_intervals: int = 10):
+        """
+        Perform a repeating evaluation of the infinite-horizon LQR problem defined by this system
+
+        The update function should accept 4 parameters:
+        - This ComplexRoad
+        - The time its being called at
+        - The road state
+        - The queue state
+
+        :param init_roads: The initial values for each road segment
+        :param init_queues: The initial values for each queue
+        :param time_span: The time interval on which to evaluate, of the form (t0, tf)
+        :param update_func: A function called after every change; can be used to change model parameters over time
+        :param num_intervals: The number of intervals to divide the full time span into
+        :return: The road states, queue states, and optimal control, in that order
+        """
+
+        # Solver parameters
+        _, R = self._get_costs()
+        r_inv = np.linalg.inv(R)
+        n_count = 1001
+        time_intervals = np.linspace(*time_span, num_intervals + 1)
+
+        # Create variables to store the found states
+        total_entries = n_count * num_intervals
+        roads = np.zeros((self.n_roads, total_entries))
+        queues = np.zeros((self.n_queues, total_entries))
+        control = np.zeros((self.n_queues, total_entries))
+
+        # Call the update function
+        if update_func:
+            update_func(self, time_intervals[0], init_roads, init_queues)
+
+        # Loop through each interval and find the values
+        for i in range(len(time_intervals) - 1):
+            # Get the interval parameters
+            interval = tuple(time_intervals[i:i + 2])
+            t_space = np.linspace(*interval, n_count)
+            i1 = n_count + (i0 := i * n_count)
+
+            # Solve on the interval, storing the states & controls
+            sol_poly, ctrl_poly = self.single_step(init_roads, init_queues, interval, r_inv=r_inv)
+            roads[:, i0:i1], queues[:, i0:i1] = sol_poly(t_space)
+            control[:, i0:i1] = ctrl_poly(t_space)
+
+            # Update the initial conditions for the next interval
+            init_roads, init_queues = roads[:, i1 - 1], queues[:, i1 - 1]
+
+            # Call the update function
+            if update_func:
+                update_func(self, t_space[-1], init_roads, init_queues)
+
+        # Return the computed solutions
+        return roads, queues, control
