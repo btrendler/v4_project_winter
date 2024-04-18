@@ -78,7 +78,7 @@ class TimePlayer(FuncAnimation):
         be treated as open on the left end, closed on the right end.
 
         :param figure: The figure to animate
-        :param time_ax: The axis to pan (x_limit will be changed)
+        :param time_ax: The axis or list of axes to pan (x_limit will be changed)
         :param param_list: The list of parameters, as defined above
         :param state_list: The list of states, as defined above
         :param update: The function that updates the lines, as defined above
@@ -96,7 +96,7 @@ class TimePlayer(FuncAnimation):
         self.param_names = [v[0] for v in param_list]
         self.param_values = [v[1] for v in param_list]
         self.param_func = update
-        self.time_ax = time_ax
+        self.time_ax = [time_ax] if not isinstance(time_ax, np.ndarray) else time_ax.flatten()
         self.t_span = t_span
         self.calc_frac = calc_frac
 
@@ -117,7 +117,8 @@ class TimePlayer(FuncAnimation):
         FuncAnimation.__init__(self, self.figure, self._anim_func, frames=self._play(), interval=ms_per_frame)
 
         # Initialize plot & axes
-        time_ax.set_xlim(self.axis_limit)
+        for t in self.time_ax:
+            t.set_xlim(self.axis_limit)
         self.x, self.ys = self.param_func(self.param_values, self.generated, self.state_values)
 
     def _set_up_ui(self, ctrl_pos, slider_height):
@@ -183,7 +184,8 @@ class TimePlayer(FuncAnimation):
             self.generated[1] += self.t_span * self.calc_frac
 
         # Apply the change to the axes
-        self.time_ax.set_xlim(self.axis_limit)
+        for t in self.time_ax:
+            t.set_xlim(self.axis_limit)
 
         # Update the state sliders to match the current values
         for i, sld in enumerate(self.s_sliders):
