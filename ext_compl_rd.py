@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.integrate import solve_ivp
-from scipy.linalg import solve_continuous_are
+from scipy.linalg import solve_discrete_are
 from typing import Callable
 
 
@@ -487,7 +487,7 @@ class ExtComplRoad:
         r_inv = np.linalg.inv(R) if r_inv is None else r_inv
 
         # Use the algebraic Ricatti equation to find P
-        P = solve_continuous_are(A, B, Q, R)
+        P = solve_discrete_are(A, B, Q, R)
 
         # Set up the evolution equation with the optimal control
         def _system(t, y):
