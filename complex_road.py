@@ -149,7 +149,7 @@ class ComplexRoad:
             # Handle merge segments
             else:
                 # Compute the linearization term
-                lt = gamma + (2 * gamma * merge_init[merge_index]) / self.cs[merge_index]
+                lt = gamma - (2 * gamma * merge_init[merge_index]) / self.cs[merge_index]
 
                 # Configure terms in the queue
                 A[self._i_queues[merge_index], self._i_betas[merge_index]] = 1
@@ -230,9 +230,9 @@ class ComplexRoad:
         :return: Two functions accepting time, the first returns the states, the second returns the control
         """
         # Compute each of the kappas
-        ds = self.gammas[self.structure[1:] == "m"]  # TODO: confirm this with someone
+        ds = self.gammas[self.structure[:-1] == "m"]
         m0 = init_roads[self.structure == "m"]
-        kappas = (ds * m0) + (ds * m0 * m0 / self.cs) - ((ds + 2 * ds * m0 / self.cs) * m0)
+        kappas = (ds * m0) - (ds * m0 * m0 / self.cs) - ((ds - 2 * ds * m0 / self.cs) * m0)
 
         # Construct the initial state vector
         init_state = np.zeros(self._n_entries)

@@ -34,18 +34,32 @@ def ts(func: Callable[[float], tuple[float, float]] | Callable[[float, float], t
         return _ret
 
 
-def const(val: float):
-    def _ret(p1, p2=0):
-        return val, 0, 0
+def const(val: float, dim=2):
+    if dim == 3:
+        def _ret(p1, p2=0):
+            return val, 0, 0
 
-    return _ret
+        return _ret
+    elif dim == 2:
+        def _ret(p1, p2=0):
+            return val, 0
+
+        return _ret
+    raise ValueError("Dim must be 2 or 3")
 
 
-def p1_const(val: float):
-    def _ret(p1, p2=0):
-        return 0, val, 0
+def p1_const(val: float, dim=2):
+    if dim == 3:
+        def _ret(p1, p2=0):
+            return 0, val, 0
 
-    return _ret
+        return _ret
+    elif dim == 2:
+        def _ret(p1, p2=0):
+            return 0, val
+
+        return _ret
+    raise ValueError("Dim must be 2 or 3")
 
 
 def p2_const(val: float):
@@ -224,7 +238,7 @@ class BeginSegment(_AbstractSegment):
 
         # Subtract f from c's state, and add it to the next one, and add alpha to c's state
         A[c, 0] = -f_const + a_const
-        A[c, c] = a_c_term - f_c_term
+        A[c, c] = -f_c_term + a_c_term
         A[c, n] = -f_n_term
         A[n, 0] = f_const
         A[n, c] = f_c_term
