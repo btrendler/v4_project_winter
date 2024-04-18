@@ -54,7 +54,17 @@ class _AbstractSegment:
 
 
 class EndSegment(_AbstractSegment):
+    """
+    A road segment representing the end of the network.
+    """
+
     def __init__(self, state_reward: float):
+        """
+        Define a new ending segment
+
+        :param state_reward: The reward associated with cars in the segment
+        """
+        # Call superclass
         _AbstractSegment.__init__(self, np.array([state_reward]), np.array([]))
 
     def _apply_state(self, A, states, n0):
@@ -62,14 +72,53 @@ class EndSegment(_AbstractSegment):
         # Invert this row of the state matrix, so the cost is a reward
         A[self.state_indices, :] *= -1
 
+    def get_seg_reward(self):
+        """
+        Get the reward associated with this segment
+        :return: The reward
+        """
+
+        return self.state_costs[0]
+
+    def set_seg_reward(self, value: float) -> None:
+        """
+        Set the reward associated with this segment
+        :param value: The new reward
+        """
+        self.state_costs[0] = value
+
 
 class RoadSegment(_AbstractSegment):
-    def __init__(self, state_cost: float,
+    """
+    A road segment representing a typical road section of the network.
+    """
+
+    def __init__(self, seg_cost: float,
                  leave_func: Callable[[float, float], tuple[float, float, float]]):
+        """
+        Define a new standard road segment
+
+        :param seg_cost: The cost associated with cars in the segment
+        :param leave_func: The function representing how quickly cars leave this segment to the next segment
+        """
         # Call superclass
-        _AbstractSegment.__init__(self, np.array([state_cost]), np.array([]))
+        _AbstractSegment.__init__(self, np.array([seg_cost]), np.array([]))
         # Store passed-in parameters
         self._f = _taylor_exp_2d(leave_func)
+
+    def get_seg_cost(self):
+        """
+        Get the cost associated with this segment
+        :return: The cost
+        """
+        return self.state_costs[0]
+
+    def set_seg_cost(self, value: float) -> None:
+        """
+        Set the cost associated with this segment
+        :param value: The new cost
+        """
+        self.state_costs[0] = value
 
     def _apply_state(self, A, states, n0):
         super()._apply_state(A, states, n0)
@@ -93,14 +142,39 @@ class RoadSegment(_AbstractSegment):
 
 
 class BeginSegment(_AbstractSegment):
-    def __init__(self, state_cost: float,
+    """
+    A road segment representing the beginning of the network.
+    """
+
+    def __init__(self, seg_cost: float,
                  enter_func: Callable[[float], tuple[float, float]],
                  leave_func: Callable[[float, float], tuple[float, float, float]]):
+        """
+        Define a new beginning segment
+
+        :param seg_cost: The cost associated with cars in the segment
+        :param enter_func: The function representing how quickly cars enter the network
+        :param leave_func: The function representing how quickly cars leave this segment to the next segment
+        """
         # Call superclass
-        _AbstractSegment.__init__(self, np.array([state_cost]), np.array([]))
+        _AbstractSegment.__init__(self, np.array([seg_cost]), np.array([]))
         # Store passed-in parameters
         self._alpha = _taylor_exp_1d(enter_func)
         self._f = _taylor_exp_2d(leave_func)
+
+    def get_seg_cost(self):
+        """
+        Get the cost associated with this segment
+        :return: The cost
+        """
+        return self.state_costs[0]
+
+    def set_seg_cost(self, value: float) -> None:
+        """
+        Set the cost associated with this segment
+        :param value: The new cost
+        """
+        self.state_costs[0] = value
 
     def _apply_state(self, A, states, n0):
         super()._apply_state(A, states, n0)
@@ -125,11 +199,26 @@ class BeginSegment(_AbstractSegment):
 
 
 class MergeSegment(_AbstractSegment):
+    """
+    A road segment representing a merge ramp. Automatically includes a queue.
+    """
+
     def __init__(self, seg_cost: float, ramp_cost: float, control_cost: float,
                  leave_func: Callable[[float, float], tuple[float, float, float]],
                  add_func: Callable[[float, float], tuple[float, float, float]],
                  queue_func: Callable[[float, float], tuple[float, float, float]] = None,
                  kappa: float = 1):
+        """
+        Define a new merge segment
+
+        :param seg_cost: The cost associated with cars in the segment
+        :param ramp_cost: The cost associated with cars on the ramp
+        :param control_cost: The cost associated with the control value
+        :param leave_func: The function representing how quickly cars leave the merge segment to the next segment
+        :param add_func: The function representing how quickly cars enter the queue
+        :param queue_func: The function representing the speed at which cars enter the merge segment from the queue
+        :param kappa: The factor on the control value (typically 1 or 0)
+        """
         # Call superclass
         _AbstractSegment.__init__(self, np.array([seg_cost, ramp_cost]), np.array([control_cost]))
         # Store passed-in parameters
@@ -137,6 +226,34 @@ class MergeSegment(_AbstractSegment):
         self._beta = _taylor_exp_2d(add_func)
         self._g = _taylor_exp_2d(queue_func) if queue_func is not None else None
         self._kappa = kappa
+
+    def get_seg_cost(self):
+        """
+        Get the cost associated with this segment
+        :return: The cost
+        """
+        return self.state_costs[0]
+
+    def set_seg_cost(self, value: float) -> None:
+        """
+        Set the cost associated with this segment
+        :param value: The new cost
+        """
+        self.state_costs[0] = value
+
+    def get_ramp_cost(self):
+        """
+        Get the cost associated with the ramp
+        :return: The cost
+        """
+        return self.state_costs[1]
+
+    def set_ramp_cost(self, value: float) -> None:
+        """
+        Set the cost associated with the ramp
+        :param value: The new cost
+        """
+        self.state_costs[1] = value
 
     def _apply_state(self, A, states, n0):
         super()._apply_state(A, states, n0)
@@ -176,8 +293,34 @@ class MergeSegment(_AbstractSegment):
         B[q, u] = -self._kappa
 
 
-class ExpComplRoad:
+class ExtComplRoad:
+    u"""
+
+    Allows the flexible modeling of the optimal control of a road network.
+    A road with a begin, merge, road, and then end block is of the form:
+
+    ╔───────╗    ╔───────╗    ╔──────╗    ╔─────────╗
+    ║ Input ║ -> ║ Merge ║ -> ║ Road ║ -> ║ Leaving ║
+    ╚───────╝    ╚───┬───╝    ╚──────╝    ╚─────────╝
+                    ╱
+               ╔───┴───╗
+               ║ Queue ║
+               ╚───────╝
+                (Any merge block is automatically given a queue.)
+
+    This class has the following methods:
+        - single_step: to solve the infinite-horizon version of the optimization problem posed
+        - multi_step: to iteratively solve the problem, producing a better solution than one-time linearization
+
+    Future versions may add support for exit ramps and dynamic parameters.
+
+    """
+
     def __init__(self):
+        """
+        Initialize a complex road comprised of several segments.
+        """
+
         self.segments = []
         self.c_state_idx = 1
         self.c_ctrl_idx = 0
@@ -188,7 +331,13 @@ class ExpComplRoad:
         self._i_roads = np.array([])
         self._i_queues = np.array([])
 
-    def add(self, seg: _AbstractSegment):
+    def add(self, seg: _AbstractSegment) -> None:
+        """
+        Adds a segment to the road network. Must be done in order, beginning with a BeginSegment and finishing with an
+        EndSegment. Once an EndSegment has been added, no further segments can be appended to this network
+
+        :param seg: The segment to append to the main road
+        """
         # Validate inputs
         if len(self.segments) == 0:
             if seg is BeginSegment:
@@ -227,27 +376,8 @@ class ExpComplRoad:
             self.n_roads = len(self._i_roads)
             self.n_queues = len(self._i_queues)
 
-    def _get_evolution(self, current_state: np.ndarray):
-        # Create a matrix of zeros so everything is constant by default
-        A = np.zeros((self.n_entries, self.n_entries))
-        B = np.zeros((self.n_entries, self.n_control))
-
-        # Loop through each segment and apply it to both matrices
-        for seg in self.segments:
-            seg._apply_state(A, current_state[seg.state_indices], current_state[seg.next])
-            seg._apply_control(B)
-
-        # Return the computed matrices
-        return A, B
-
-    def _get_costs(self):
-        return (
-            np.diag(np.concatenate([seg.state_cost for seg in self.segments])),
-            np.diag(np.concatenate([seg.control_cost for seg in self.segments]))
-        )
-
     def single_step(self, init_roads: np.ndarray, init_queues: np.ndarray, time_span: tuple,
-                    r_inv: np.ndarray = None):
+                    r_inv: np.ndarray = None) -> None:
         """
         Perform a one-time evaluation of the infinite-horizon LQR problem defined by this system
 
@@ -287,7 +417,7 @@ class ExpComplRoad:
 
     def multi_step(self, init_roads: np.ndarray, init_queues: np.ndarray,
                    time_span: tuple[float, float] | tuple[int, int], update_func: Callable = None,
-                   num_intervals: int = 10):
+                   num_intervals: int = 10) -> None:
         """
         Perform a repeating evaluation of the infinite-horizon LQR problem defined by this system
 
@@ -304,7 +434,6 @@ class ExpComplRoad:
         :param num_intervals: The number of intervals to divide the full time span into
         :return: The road states, queue states, and optimal control, in that order
         """
-
         # Solver parameters
         _, R = self._get_costs()
         r_inv = np.linalg.inv(R)
@@ -342,3 +471,23 @@ class ExpComplRoad:
 
         # Return the computed solutions
         return roads, queues, control
+
+    def _get_evolution(self, current_state: np.ndarray):
+        # Create a matrix of zeros so everything is constant by default
+        A = np.zeros((self.n_entries, self.n_entries))
+        B = np.zeros((self.n_entries, self.n_control))
+
+        # Loop through each segment and apply it to both matrices
+        for seg in self.segments:
+            seg._apply_state(A, current_state[seg.state_indices], current_state[seg.next])
+            seg._apply_control(B)
+
+        # Return the computed matrices
+        return A, B
+
+    def _get_costs(self):
+        # Create the state cost & control costs using the definitions in the segments
+        return (
+            np.diag(np.concatenate([seg.state_cost for seg in self.segments])),
+            np.diag(np.concatenate([seg.control_cost for seg in self.segments]))
+        )
