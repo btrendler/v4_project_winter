@@ -60,7 +60,7 @@ class EndSegment(_AbstractSegment):
 
     def __init__(self, state_reward: float):
         """
-        Define a new ending segment
+        Define a new ending segment.
 
         :param state_reward: The reward associated with cars in the segment
         """
@@ -96,7 +96,8 @@ class RoadSegment(_AbstractSegment):
     def __init__(self, seg_cost: float,
                  leave_func: Callable[[float, float], tuple[float, float, float]]):
         """
-        Define a new standard road segment
+        Define a new standard road segment. For information about function structure, see the documentation for the
+        ExtComplRoad class.
 
         :param seg_cost: The cost associated with cars in the segment
         :param leave_func: The function representing how quickly cars leave this segment to the next segment
@@ -150,7 +151,8 @@ class BeginSegment(_AbstractSegment):
                  enter_func: Callable[[float], tuple[float, float]],
                  leave_func: Callable[[float, float], tuple[float, float, float]]):
         """
-        Define a new beginning segment
+        Define a new beginning segment. For information about function structure, see the documentation for the
+        ExtComplRoad class.
 
         :param seg_cost: The cost associated with cars in the segment
         :param enter_func: The function representing how quickly cars enter the network
@@ -209,7 +211,8 @@ class MergeSegment(_AbstractSegment):
                  queue_func: Callable[[float, float], tuple[float, float, float]] = None,
                  kappa: float = 1):
         """
-        Define a new merge segment
+        Define a new merge segment. For information about function structure, see the documentation for the
+        ExtComplRoad class.
 
         :param seg_cost: The cost associated with cars in the segment
         :param ramp_cost: The cost associated with cars on the ramp
@@ -312,7 +315,15 @@ class ExtComplRoad:
         - single_step: to solve the infinite-horizon version of the optimization problem posed
         - multi_step: to iteratively solve the problem, producing a better solution than one-time linearization
 
-    Future versions may add support for exit ramps and dynamic parameters.
+    Future versions may add support for exit ramps, loops, and multiple inputs.
+
+    Functions must be specified such that they return not only their value, but also their derivatives. For example,
+    a function from 1 variable to the real numbers must return two values - first, the value of the function, and then,
+    the value of the function's derivative, as a tuple.
+
+    For a function from 2 variables to the real numbers, it must return three values - first, the value of the function,
+    then the first derivative of the function with respect to the first parameter, then the first derivative of the
+    function with respect to the second parameter, again as a tuple.
 
     """
 
