@@ -16,7 +16,7 @@ importlib.reload(time_player)
 
 fig, ax = plt.subplots()
 line, = ax.plot(np.array([]), np.array([]), label="Wave")
-ax.legend()
+ax.legend(loc="lower right")
 ax.set_ylim((-10, 10))
 
 params = [(("Amplitude", 0., 10.), 3.), (("Frequency", 0.1, 30.), 3.)]
