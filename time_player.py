@@ -96,7 +96,7 @@ class TimePlayer(FuncAnimation):
         self.param_names = [v[0] for v in param_list]
         self.param_values = [v[1] for v in param_list]
         self.param_func = update
-        self.time_ax = [time_ax] if not isinstance(time_ax, np.ndarray) else time_ax.flatten()
+        self.time_ax = time_ax
         self.t_span = t_span
         self.calc_frac = calc_frac
 
@@ -117,7 +117,7 @@ class TimePlayer(FuncAnimation):
         FuncAnimation.__init__(self, self.figure, self._anim_func, frames=self._play(), interval=ms_per_frame)
 
         # Initialize plot & axes
-        for t in self.time_ax:
+        for (t, _) in self.time_ax:
             t.set_xlim(self.axis_limit)
         self.x, self.ys = self.param_func(self.param_values, self.generated, self.state_values)
 
@@ -184,8 +184,12 @@ class TimePlayer(FuncAnimation):
             self.generated[1] += self.t_span * self.calc_frac
 
         # Apply the change to the axes
-        for t in self.time_ax:
+        for (t, l) in self.time_ax:
             t.set_xlim(self.axis_limit)
+            if l is not None:
+                l, i, n = l
+                v = float(self.ys[i, self.x < self.axis_limit[1]][-1])
+                l.set_title(f"{n}:{v: 9.4f}")
 
         # Update the state sliders to match the current values
         for i, sld in enumerate(self.s_sliders):

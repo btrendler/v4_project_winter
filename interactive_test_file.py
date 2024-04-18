@@ -16,7 +16,7 @@ importlib.reload(time_player)
 
 fig, ax = plt.subplots(2,2, figsize=(6,12))
 line1, = ax[0,0].plot(np.array([]), np.array([]), label="Wave")
-ax[0,0].legend(loc="lower right")
+l1 = ax[0,0].legend(loc="lower right", alignment="left", title_fontproperties={'family': 'monospace'})
 ax[0,0].set_ylim((-10, 10))
 line2, = ax[1,0].plot(np.array([]), np.array([]), label="Wave")
 ax[1,0].legend(loc="lower right")
@@ -27,8 +27,10 @@ ax[0,1].set_ylim((-10, 10))
 line4, = ax[1,1].plot(np.array([]), np.array([]), label="Wave")
 ax[1,1].legend(loc="lower right")
 ax[1,1].set_ylim((-10, 10))
+ax = list(ax.flatten())
+hands = [(l1, 0, "R"), None, None, None]
 
-params = [(("Amplitude", 0., 10.), 3.), (("Frequency", 0.1, 30.), 3.)]
+params = [(("Amplitude", 0., 15.), 3.), (("Frequency", 0.1, 30.), 3.)]
 state = [(("n", -10., 10.), 0.)]
 
 
@@ -66,5 +68,5 @@ def update(params_list, interval, start_state):
     return x_full, y_full.reshape((1, -1))
 
 
-time_player.TimePlayer(fig, ax, params, state, update, t_per_sec=0.001, t_span=2, ms_per_frame=50)
+time_player.TimePlayer(fig, list(zip(ax, hands)), params, state, update, t_per_sec=0.001, t_span=2, ms_per_frame=50)
 plt.show()
