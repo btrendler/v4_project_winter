@@ -209,6 +209,11 @@ class TimePlayer(FuncAnimation):
                 # Update the state
                 self.state_values = self.ys[:, self.x < self.axis_limit[1]][:, -1]
 
+                # Make the sliders for params draggable
+                for sld in self.p_sliders:
+                    sld.connect_event("motion_notify_event", sld._update)
+                    sld.m_cid = sld._cids[-1]
+
                 # Make the sliders for state active
                 for sld in self.s_sliders:
                     if sld.label.get_text() == "l":
@@ -241,6 +246,11 @@ class TimePlayer(FuncAnimation):
             # Start animation
             self.btn_pause.color = "0.85"
             self.event_source.start()
+
+            # Make the sliders for params not draggable
+            for sld in self.p_sliders:
+                sld.canvas.mpl_disconnect(sld.m_cid)
+                sld._cids.remove(sld.m_cid)
 
             # Make the sliders for state inactive
             for sld in self.s_sliders:
