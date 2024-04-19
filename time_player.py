@@ -140,17 +140,16 @@ class TimePlayer(FuncAnimation):
 
         p_sliders = []
         for i, ((n, mi, mx), v) in enumerate(zip(self.param_names, self.param_values)):
-            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + 1)), 0.65, 0.03])
+            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + 1.5)), 0.65, 0.03])
             p_sliders.append(Slider(ax=ax, label=n, valmin=mi, valmax=mx, valinit=v, dragging=False))
             p_sliders[-1].on_changed(self._chng_params(i))
-            print(p_sliders[-1].poly.get_facecolor())
         self.p_sliders = p_sliders
         n_sliders = len(p_sliders)
 
         # Construct a slider for each state
         s_sliders = []
         for i, ((n, mi, mx), v) in enumerate(zip(self.state_names, self.state_values)):
-            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + 1 + n_sliders)), 0.65, 0.03])
+            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + 1.5 + n_sliders)), 0.65, 0.03])
             s_sliders.append(Slider(ax=ax, label=n, valmin=mi, valmax=mx, valinit=v, dragging=True, color="grey"))
             s_sliders[-1].on_changed(self._chng_state(i))
             s_sliders[-1].set_active(False)
@@ -188,12 +187,15 @@ class TimePlayer(FuncAnimation):
             t.set_xlim(self.axis_limit)
             if l is not None:
                 l, i, n = l
-                v = float(self.ys[i, self.x < self.axis_limit[1]][-1])
+                v = np.abs(float(self.ys[i, self.x < self.axis_limit[1]][-1]))
                 l.set_title(f"{n}:{v: 9.4f}")
 
         # Update the state sliders to match the current values
         for i, sld in enumerate(self.s_sliders):
-            sld.set_val(self.ys[i, self.x < self.axis_limit[1]][-1])
+            v = self.ys[i, self.x < self.axis_limit[1]][-1]
+            if sld.label.get_text() == "l":
+                v = np.abs(v)
+            sld.set_val(v)
 
     def _chng_play_state(self, type):
         def _ret(_):
@@ -209,6 +211,8 @@ class TimePlayer(FuncAnimation):
 
                 # Make the sliders for state active
                 for sld in self.s_sliders:
+                    if sld.label.get_text() == "l":
+                        continue
                     sld.poly.set_facecolor((0.12156862745098039, 0.4666666666666667, 0.7058823529411765, 1.0))
                     sld.set_active(True)
                 self.figure.canvas.draw_idle()

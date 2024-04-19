@@ -305,6 +305,20 @@ class MergeSegment(_AbstractSegment):
         """
         self.state_costs[1] = value
 
+    def get_control_cost(self):
+        """
+        Get the cost associated with the control
+        :return: The cost
+        """
+        return self.control_costs[0]
+
+    def set_control_cost(self, value: float) -> None:
+        """
+        Set the cost associated with the control
+        :param value: The new cost
+        """
+        self.control_costs[0] = value
+
     def _apply_state(self, A, states, n_state, ctrl=True):
         super()._apply_state(A, states, n_state, ctrl)
         # Extract linearization values
