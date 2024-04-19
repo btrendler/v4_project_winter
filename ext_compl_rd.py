@@ -504,8 +504,11 @@ class ExtComplRoad:
         P = solve_discrete_are(A, B, Q, R)
 
         # Set up the evolution equation with the optimal control
-        def _system(t, y):
-            return (A - B @ r_inv @ B.T @ P) @ y
+        def _system(_, x):
+            u = -r_inv @ B.T @ P @ x
+            x_p = A @ x + B @ np.maximum(u, 0)
+            x_p[x <= np.finfo(float).eps * 1e8] = 0
+            return x_p
 
         # Solve the optimal state evolution using the DOP853 solver
         sol = solve_ivp(_system, time_span, init_state, dense_output=True, method="DOP853")
@@ -516,7 +519,7 @@ class ExtComplRoad:
             return res[self._i_roads], res[self._i_queues]
 
         # Return the found solution
-        return _get_sol, lambda t: (-r_inv @ B.T @ P @ sol.sol(t))
+        return _get_sol, lambda t: np.maximum(-r_inv @ B.T @ P @ sol.sol(t), 0)
 
     def multi_step(self, init_roads: np.ndarray, init_queues: np.ndarray,
                    time_span: tuple[float, float] | tuple[int, int], update_func: Callable = None,
