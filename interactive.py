@@ -4,6 +4,7 @@ import ext_compl_rd as ecr
 import time_player as tp
 from scipy.signal import savgol_filter
 
+
 # See interactive.ipynb for instructions on how to use this file
 
 def configure_model():
@@ -31,13 +32,17 @@ def configure_model():
     num_intervals = 1
     return net, begin_segment, merge_segment, end_segment, num_intervals
 
+
 l = np.array([])
+
+
 def controlled():
+    global l
     # Configure the model
     net, begin_segment, merge_segment, end_segment, num_intervals = configure_model()
 
     # Set up the plot, with a subplot for the road states, control, and the queue
-    fig, ax = plt.subplots(1, 2, figsize=(7, 9))
+    fig, ax = plt.subplots(1, 2, figsize=(7, 9), num="Traffic Model (Controlled)")
     empty = np.array([])
     n, = ax[0].plot(empty, empty, label="I$\\bf{{n}}$put")
     m, = ax[0].plot(empty, empty, label="$\\bf{{M}}$erge")
@@ -49,6 +54,7 @@ def controlled():
     ax[1].set_ylim((0, 20))
     ax = list(ax)
     ls = [None, (leg, 3, "Exit")]
+    l = np.array([])
 
     # Tunable parameters
     params = [
@@ -110,10 +116,12 @@ def controlled():
         # Return the stacked data
         return x_full, np.vstack((n_new, m_new, q_new, l, u_new))
 
-    _ = tp.TimePlayer(fig, list(zip(ax, ls)), params, state, update, t_per_sec=0.002, t_span=10, ms_per_frame=50, calc_frac=0.25, slider_height=0.45)
+    _ = tp.TimePlayer(fig, list(zip(ax, ls)), params, state, update, t_per_sec=0.002, t_span=10, ms_per_frame=50,
+                      calc_frac=0.25, slider_height=0.45)
     plt.show()
     return _
 
 
 if __name__ == "__main__":
+    # uncontrolled()
     controlled()
