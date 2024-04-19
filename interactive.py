@@ -19,7 +19,7 @@ def configure_model():
     merge_segment = ecr.MergeSegment(2., 5., 1.,
                                      ecr.ts(lambda c, n: (delta * c * (1 - c / cap), delta - 2 * delta * c / cap, 0)),
                                      ecr.ts(lambda c, q: (beta * (1 - c / cap), -beta * c / cap, 0)),
-                                     ecr.ts(lambda c, q: (0, 0, 0)))
+                                     ecr.ts(lambda c, q: (rho*q*(1-c/cap)*(1-q/cap), -rho*q/cap + rho*q**2/(cap**2), rho - 2*rho*q/cap - rho*c/cap + 2*rho*q*c/(cap**2))))
     end_segment = ecr.EndSegment(2.0)
 
     # Create the net
