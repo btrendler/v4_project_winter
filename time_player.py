@@ -4,7 +4,6 @@ from matplotlib.animation import FuncAnimation
 import mpl_toolkits.axes_grid1
 import numpy as np
 
-
 """
 Written by EJ Mercer
 
@@ -63,8 +62,8 @@ class TimePlayer(FuncAnimation):
 
     """
 
-
-    def __init__(self, figure, time_ax, param_list, state_list, update, t_per_sec=60, ms_per_frame=200, ctrl_pos=(0.125, 0.92), t_span=600, slider_height=0.45, calc_frac=0.25):
+    def __init__(self, figure, time_ax, param_list, state_list, update, t_per_sec=60, ms_per_frame=200,
+                 ctrl_pos=(0.125, 0.92), t_span=600, slider_height=0.45, calc_frac=0.25):
         """
         Initialize a TimePlayer
 
@@ -114,7 +113,8 @@ class TimePlayer(FuncAnimation):
         self._set_up_ui(ctrl_pos, slider_height)
 
         # Call superclass constructor
-        FuncAnimation.__init__(self, self.figure, self._anim_func, frames=self._play(), interval=ms_per_frame)
+        FuncAnimation.__init__(self, self.figure, self._anim_func, frames=self._play(), interval=ms_per_frame,
+                               cache_frame_data=False)
 
         # Initialize plot & axes
         for (t, _) in self.time_ax:
@@ -139,8 +139,9 @@ class TimePlayer(FuncAnimation):
         indiv_height = slider_height * 0.9 / (len(self.param_values) + len(self.state_values))
 
         p_sliders = []
+        indiv = 1.5 if (len(self.param_values) + len(self.state_values)) > 4 else 1
         for i, ((n, mi, mx), v) in enumerate(zip(self.param_names, self.param_values)):
-            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + 1.5)), 0.65, 0.03])
+            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + indiv)), 0.65, 0.03])
             p_sliders.append(Slider(ax=ax, label=n, valmin=mi, valmax=mx, valinit=v, dragging=False))
             p_sliders[-1].on_changed(self._chng_params(i))
         self.p_sliders = p_sliders
@@ -149,7 +150,7 @@ class TimePlayer(FuncAnimation):
         # Construct a slider for each state
         s_sliders = []
         for i, ((n, mi, mx), v) in enumerate(zip(self.state_names, self.state_values)):
-            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + 1.5 + n_sliders)), 0.65, 0.03])
+            ax = self.figure.add_axes([0.22, slider_height - (indiv_height * (i + indiv + n_sliders)), 0.65, 0.03])
             s_sliders.append(Slider(ax=ax, label=n, valmin=mi, valmax=mx, valinit=v, dragging=True, color="grey"))
             s_sliders[-1].on_changed(self._chng_state(i))
             s_sliders[-1].set_active(False)
@@ -193,7 +194,7 @@ class TimePlayer(FuncAnimation):
         # Update the state sliders to match the current values
         for i, sld in enumerate(self.s_sliders):
             v = self.ys[i, self.x < self.axis_limit[1]][-1]
-            if sld.label.get_text() == "l":
+            if sld.label.get_text() == "$\\bf{{L}}$eaving":
                 v = np.abs(v)
             sld.set_val(v)
 
@@ -216,7 +217,7 @@ class TimePlayer(FuncAnimation):
 
                 # Make the sliders for state active
                 for sld in self.s_sliders:
-                    if sld.label.get_text() == "l":
+                    if sld.label.get_text() == "$\\bf{{L}}$eaving":
                         continue
                     sld.poly.set_facecolor((0.12156862745098039, 0.4666666666666667, 0.7058823529411765, 1.0))
                     sld.set_active(True)
@@ -257,12 +258,14 @@ class TimePlayer(FuncAnimation):
                 sld.poly.set_facecolor("grey")
                 sld.set_active(False)
             self.figure.canvas.draw_idle()
+
         return _ret
 
     def _chng_params(self, idx):
         def _ret(val):
             self.param_changed = self.param_values[idx] != val
             self.param_values[idx] = val
+
         return _ret
 
     def _chng_state(self, idx):
@@ -270,8 +273,8 @@ class TimePlayer(FuncAnimation):
             if not self.run_rate:
                 self.state_changed = self.state_values[idx] != val
                 self.state_values[idx] = val
-        return _ret
 
+        return _ret
 
     def _play(self):
         while self.run_rate != 0:

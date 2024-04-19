@@ -36,10 +36,72 @@ def configure_model():
 l = np.array([])
 
 
-def controlled():
+def uncontrolled(net, _, _2, _3, num_intervals):
     global l
-    # Configure the model
-    net, begin_segment, merge_segment, end_segment, num_intervals = configure_model()
+
+    # Set up the plot
+    fig, ax = plt.subplots(1, 1, figsize=(7, 9), num="Traffic Model (Uncontrolled)")
+    empty = np.array([])
+    n, = ax.plot(empty, empty, label="I$\\bf{{n}}$put")
+    m, = ax.plot(empty, empty, label="$\\bf{{M}}$erge")
+    q, = ax.plot(empty, empty, label="$\\bf{{Q}}$ueue")
+    leg = ax.legend(loc="upper right", alignment="left", title_fontproperties={"family": "monospace"})
+    ax.set_ylim((0, 20))
+    ax = [ax]
+    ls = [(leg, 3, "Exit")]
+    l = np.array([])
+
+    # Tunable parameters
+    params = []
+    state = [
+        (("I$\\bf{{n}}$put", 0, 10), 2.),
+        (("$\\bf{{M}}$erge", 0, 10), 1.),
+        (("$\\bf{{Q}}$ueue", 0, 10), 1.),
+        (("$\\bf{{L}}$eaving", 0, 1.), 0.)
+    ]
+
+    # Update function
+    def _update(_, interval, start_state):
+        global l
+        # Set up initial state
+        n0, m0, q0, l0 = start_state
+        init_roads = np.array([n0, m0, l0])
+        init_queues = np.array([q0])
+
+        # Solve the system
+        x_new = np.linspace(interval[1], interval[0], 1000, endpoint=False)[::-1]
+        roads, queues = net.uncontrolled_result(init_roads, init_queues, interval)(x_new)
+
+        # Get the x and y data currently in the lines
+        x_v = n.get_xdata()
+        mask = x_v < interval[0]
+        n_new = savgol_filter(np.concatenate((n.get_ydata()[mask], roads[0])), 300, 2)
+        m_new = savgol_filter(np.concatenate((m.get_ydata()[mask], roads[1])), 300, 2)
+        q_new = savgol_filter(np.concatenate((q.get_ydata()[mask], queues[0])), 300, 2)
+        l = np.concatenate((l[mask], roads[2]))
+        x_v = x_v[x_v < interval[0]]
+        x_full = np.concatenate((x_v, x_new))
+
+        # Update the lines
+        n.set_xdata(x_full)
+        n.set_ydata(n_new)
+        m.set_xdata(x_full)
+        m.set_ydata(m_new)
+        q.set_xdata(x_full)
+        q.set_ydata(q_new)
+
+        # Return the stacked data
+        return x_full, np.vstack((n_new, m_new, q_new, l))
+
+    _ = tp.TimePlayer(fig, list(zip(ax, ls)), params, state, _update, t_per_sec=0.002, t_span=10, ms_per_frame=50,
+                      calc_frac=0.25, slider_height=0.45)
+    plt.show()
+    return _
+
+
+
+def controlled(net, begin_segment, merge_segment, end_segment, num_intervals):
+    global l
 
     # Set up the plot, with a subplot for the road states, control, and the queue
     fig, ax = plt.subplots(1, 2, figsize=(7, 9), num="Traffic Model (Controlled)")
@@ -65,15 +127,15 @@ def controlled():
         (("control cost", 0., 5.), 1.),
     ]
     state = [
-        (("n", 0, 20), 2.),
-        (("m", 0, 20), 1.),
-        (("q", 0, 20), 1.),
-        (("l", 0, 20), 0.),
-        (("u", 0, 20), 0.)
+        (("I$\\bf{{n}}$put", 0, 10), 2.),
+        (("$\\bf{{M}}$erge", 0, 10), 1.),
+        (("$\\bf{{Q}}$ueue", 0, 10), 1.),
+        (("$\\bf{{L}}$eaving", 0, 1.), 0.),
+        (("Control", 0, 20), 0.)
     ]
 
     # Update function
-    def update(params, interval, start_state):
+    def _update(params, interval, start_state):
         global l
         # Update costs
         c_n, c_m, c_q, c_l, c_u = params
@@ -116,12 +178,13 @@ def controlled():
         # Return the stacked data
         return x_full, np.vstack((n_new, m_new, q_new, l, u_new))
 
-    _ = tp.TimePlayer(fig, list(zip(ax, ls)), params, state, update, t_per_sec=0.002, t_span=10, ms_per_frame=50,
+    _ = tp.TimePlayer(fig, list(zip(ax, ls)), params, state, _update, t_per_sec=0.002, t_span=10, ms_per_frame=50,
                       calc_frac=0.25, slider_height=0.45)
     plt.show()
     return _
 
 
 if __name__ == "__main__":
-    # uncontrolled()
-    controlled()
+    model = configure_model()
+    uncontrolled(*model)
+    controlled(*model)

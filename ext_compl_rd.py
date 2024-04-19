@@ -507,7 +507,7 @@ class ExtComplRoad:
         def _system(_, x):
             u = -r_inv @ B.T @ P @ x
             x_p = A @ x + B @ np.maximum(u, 0)
-            x_p[x <= np.finfo(float).eps * 1e8] = 0
+            x_p[x <= np.finfo(float).eps * 1e8][:-1] = 0
             return x_p
 
         # Solve the optimal state evolution using the DOP853 solver
