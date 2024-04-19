@@ -5,7 +5,7 @@ import time_player as tp
 from scipy.signal import savgol_filter
 
 
-# See interactive.ipynb for instructions on how to use this file
+# See interactive (READ ME for instructions).ipynb for instructions on how to use this file
 
 def configure_model():
     # Create the model segments
