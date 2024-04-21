@@ -22,14 +22,14 @@ def ts(func: Callable[[float], tuple[float, float]] | Callable[[float, float], t
         def _ret(point: float):
             # Compute the constant and first-order terms and return them
             f, fp1 = func(point)
-            return (f - point * fp1), fp1
+            return f, (f - point * fp1), fp1
 
         return _ret
     except TypeError:
         def _ret(p1: float, p2: float):
             # Compute the constant and first-order terms and return them
             f, fp1, fp2 = func(p1, p2)
-            return (f - (p1 * fp1) - (p2 * fp2)), fp1, fp2
+            return f, (f - (p1 * fp1) - (p2 * fp2)), fp1, fp2
 
         return _ret
 
@@ -37,12 +37,12 @@ def ts(func: Callable[[float], tuple[float, float]] | Callable[[float, float], t
 def const(val: float, dim=2):
     if dim == 3:
         def _ret(p1, p2=0):
-            return val, 0, 0
+            return val, val, 0, 0
 
         return _ret
     elif dim == 2:
         def _ret(p1, p2=0):
-            return val, 0
+            return val, val, 0
 
         return _ret
     raise ValueError("Dim must be 2 or 3")
@@ -51,12 +51,12 @@ def const(val: float, dim=2):
 def p1_const(val: float, dim=2):
     if dim == 3:
         def _ret(p1, p2=0):
-            return 0, val, 0
+            return p1 * val, 0, val, 0
 
         return _ret
     elif dim == 2:
         def _ret(p1, p2=0):
-            return 0, val
+            return p1 * val, 0, val
 
         return _ret
     raise ValueError("Dim must be 2 or 3")
@@ -64,7 +64,7 @@ def p1_const(val: float, dim=2):
 
 def p2_const(val: float):
     def _ret(p1, p2=0):
-        return 0, 0, val
+        return p2 * val, 0, 0, val
 
     return _ret
 
@@ -89,7 +89,11 @@ class _AbstractSegment:
             raise ValueError(f"Must have at least {self.n_control} control indices assigned to this node.")
         self.control_indices = control_indices
 
-    def _apply_state(self, A, states, n_state, ctrl=True):
+    def _apply_state_lin(self, A, states, ctrl=True):
+        if self.state_indices is None:
+            raise ValueError("Must attach to a road network.")
+
+    def _apply_state_orig(self, x, x_p, ctrl=False):
         if self.state_indices is None:
             raise ValueError("Must attach to a road network.")
 
@@ -112,11 +116,16 @@ class EndSegment(_AbstractSegment):
         # Call superclass
         _AbstractSegment.__init__(self, np.array([state_reward]), np.array([]))
 
-    def _apply_state(self, A, states, n_state, ctrl=True):
-        super()._apply_state(A, states, n_state, ctrl)
+    def _apply_state_lin(self, A, states, ctrl=True):
+        super()._apply_state_lin(A, states, ctrl)
         # Invert this row of the state matrix, so the cost is a reward
         if ctrl:
             A[self.state_indices, :] *= -1
+
+    def _apply_state_orig(self, x, x_p, ctrl=False):
+        super()._apply_state_orig(x, x_p, ctrl)
+        # Invert the row of the x_p
+        x_p[self.state_indices] *= -1
 
     def get_seg_reward(self):
         """
@@ -140,7 +149,7 @@ class RoadSegment(_AbstractSegment):
     """
 
     def __init__(self, seg_cost: float,
-                 leave_func: Callable[[float, float], tuple[float, float, float]]):
+                 leave_func: Callable[[float, float], tuple[float, float, float, float]]):
         """
         Define a new standard road segment. For information about function structure, see the documentation for the
         ExtComplRoad class.
@@ -167,17 +176,18 @@ class RoadSegment(_AbstractSegment):
         """
         self.state_costs[0] = value
 
-    def _apply_state(self, A, states, n0, ctrl=True):
-        super()._apply_state(A, states, n0, ctrl)
+    def _apply_state_lin(self, A, states, ctrl=True):
+        super()._apply_state_lin(A, states, ctrl)
         # Extract linearization values
-        c0, = states
+        c0, = states[self.state_indices]
+        n0 = states[self.next]
 
         # Get indices
         c, = self.state_indices
         n = self.next
 
         # Evaluate linearized functions
-        const, c_term, n_term = self._f(c0, n0)
+        _, const, c_term, n_term = self._f(c0, n0)
 
         # Subtract f from c's state, and add it to the next one
         A[c, 0] = -const
@@ -187,6 +197,21 @@ class RoadSegment(_AbstractSegment):
         A[n, c] = c_term
         A[n, n] = n_term
 
+    def _apply_state_orig(self, x, x_p, ctrl=False):
+        super()._apply_state_orig(x, x_p, ctrl)
+        # Extract values
+        c_v, = x[self.state_indices]
+        n_v = x[self.next]
+
+        # Get indices
+        c, = self.state_indices
+        n = self.next
+
+        # Evaluate transition function
+        f, _, _, _ = self._f(c_v, n_v)
+        x_p[c] += -f
+        x_p[n] += f
+
 
 class BeginSegment(_AbstractSegment):
     """
@@ -194,8 +219,8 @@ class BeginSegment(_AbstractSegment):
     """
 
     def __init__(self, seg_cost: float,
-                 enter_func: Callable[[float], tuple[float, float]],
-                 leave_func: Callable[[float, float], tuple[float, float, float]]):
+                 enter_func: Callable[[float], tuple[float, float, float]],
+                 leave_func: Callable[[float, float], tuple[float, float, float, float]]):
         """
         Define a new beginning segment. For information about function structure, see the documentation for the
         ExtComplRoad class.
@@ -224,18 +249,19 @@ class BeginSegment(_AbstractSegment):
         """
         self.state_costs[0] = value
 
-    def _apply_state(self, A, states, n0, ctrl=True):
-        super()._apply_state(A, states, n0, ctrl)
+    def _apply_state_lin(self, A, states, ctrl=True):
+        super()._apply_state_lin(A, states, ctrl)
         # Extract linearization values
-        c0, = states
+        c0, = states[self.state_indices]
+        n0 = states[self.next]
 
         # Get indices
         c, = self.state_indices
         n = self.next
 
         # Evaluate linearized functions
-        f_const, f_c_term, f_n_term = self._f(c0, n0)
-        a_const, a_c_term = self._alpha(c0)
+        _, f_const, f_c_term, f_n_term = self._f(c0, n0)
+        _, a_const, a_c_term = self._alpha(c0)
 
         # Subtract f from c's state, and add it to the next one, and add alpha to c's state
         A[c, 0] = -f_const + a_const
@@ -245,6 +271,22 @@ class BeginSegment(_AbstractSegment):
         A[n, c] = f_c_term
         A[n, n] = f_n_term
 
+    def _apply_state_orig(self, x, x_p, ctrl=False):
+        super()._apply_state_orig(x, x_p, ctrl)
+        # Extract values
+        c_v, = x[self.state_indices]
+        n_v = x[self.next]
+
+        # Get indices
+        c, = self.state_indices
+        n = self.next
+
+        # Evaluate transition functions
+        f, _, _, _ = self._f(c_v, n_v)
+        alpha, _, _ = self._alpha(c_v)
+        x_p[c] = alpha - f
+        x_p[n] = f
+
 
 class MergeSegment(_AbstractSegment):
     """
@@ -252,9 +294,9 @@ class MergeSegment(_AbstractSegment):
     """
 
     def __init__(self, seg_cost: float, ramp_cost: float, control_cost: float,
-                 leave_func: Callable[[float, float], tuple[float, float, float]],
-                 add_func: Callable[[float, float], tuple[float, float, float]],
-                 queue_func: Callable[[float, float], tuple[float, float, float]] = None,
+                 leave_func: Callable[[float, float], tuple[float, float, float, float]],
+                 add_func: Callable[[float, float], tuple[float, float, float, float]],
+                 queue_func: Callable[[float, float], tuple[float, float, float, float]] = None,
                  kappa: float = 1):
         """
         Define a new merge segment. For information about function structure, see the documentation for the
@@ -319,21 +361,22 @@ class MergeSegment(_AbstractSegment):
         """
         self.control_costs[0] = value
 
-    def _apply_state(self, A, states, n_state, ctrl=True):
-        super()._apply_state(A, states, n_state, ctrl)
+    def _apply_state_lin(self, A, states, ctrl=True):
+        super()._apply_state_lin(A, states, ctrl)
         # Extract linearization values
-        c0, q0, = states
+        c0, q0, = states[self.state_indices]
+        n0 = states[self.next]
 
         # Get indices
         c, q, = self.state_indices
         n = self.next
 
         # Evaluate linearized functions
-        f_const, f_c_term, f_n_term = self._f(c0, n_state)
-        b_const, b_c_term, b_q_term = self._beta(c0, q0)
-        g_const, g_c_term, g_q_term = 0., 0., 0.
+        _, f_const, f_c_term, f_n_term = self._f(c0, n0)
+        _, b_const, b_c_term, b_q_term = self._beta(c0, q0)
+        _, g_const, g_c_term, g_q_term = 0., 0., 0., 0.
         if self._g is not None and not ctrl:
-            g_const, g_c_term, g_q_term = self._g(c0, q0)
+            _, g_const, g_c_term, g_q_term = self._g(c0, q0)
 
         # Apply to the state accordingly
         # First, c prime
@@ -349,6 +392,27 @@ class MergeSegment(_AbstractSegment):
         A[q, 0] = b_const - g_const
         A[q, q] = b_q_term - g_q_term
         A[q, c] = b_c_term - g_c_term
+
+    def _apply_state_orig(self, x, x_p, ctrl=False):
+        super()._apply_state_orig(x, x_p, ctrl)
+        # Extract values
+        c_v, q_v, = x[self.state_indices]
+        n_v = x[self.next]
+
+        # Get indices
+        c, q, = self.state_indices
+        n = self.next
+
+        # Evaluate transition function
+        f, _, _, _ = self._f(c_v, n_v)
+        b, _, _, _ = self._beta(c_v, q_v)
+        g = 0
+        if self._g is not None and not ctrl:
+            g, _, _, _ = self._g(c_v, q_v)
+
+        x_p[c] += -f + g
+        x_p[n] += f
+        x_p[q] = b - g
 
     def _apply_control(self, B, unctrl=False):
         c, q, = self.state_indices
@@ -465,8 +529,12 @@ class ExtComplRoad:
         A, _ = self._get_evolution(init_state, ctrl=False)
 
         # Set up the evolution equation
-        def _system(_, y):
-            return A @ y
+        def _system(_, x):
+            # Determine x_p
+            x_p = np.zeros_like(x)
+            for seg in self.segments:
+                seg._apply_state_orig(x, x_p, False)
+            return x_p
 
         # Solve the state evolution using DOP853
         sol = solve_ivp(_system, time_span, init_state, dense_output=True, method="DOP853")
@@ -505,8 +573,16 @@ class ExtComplRoad:
 
         # Set up the evolution equation with the optimal control
         def _system(_, x):
+            # Determine original x_p
+            x_p = np.zeros_like(x)
+            for seg in self.segments:
+                seg._apply_state_orig(x, x_p, True)
+
+            # Add in control
             u = -r_inv @ B.T @ P @ x
-            x_p = A @ x + B @ np.maximum(u, 0)
+            x_p += B @ np.maximum(u, 0)
+
+            # Clip to be at least zero
             x_p[x <= np.finfo(float).eps * 1e8][:-1] = 0
             return x_p
 
@@ -585,8 +661,7 @@ class ExtComplRoad:
 
         # Loop through each segment and apply it to both matrices
         for seg in self.segments:
-            seg._apply_state(A, current_state[seg.state_indices],
-                             current_state[seg.next] if seg.next is not None else None, ctrl)
+            seg._apply_state_lin(A, current_state, ctrl)
             if ctrl:
                 seg._apply_control(B)
 
